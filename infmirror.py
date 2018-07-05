@@ -4,12 +4,13 @@ import tkinter as tk
 from PIL import Image, ImageTk
 from tkinter import filedialog as fd
 
-
 class Interact:
+    
     def __init__(self):
         self.imfile = None
         self.image = None
         self.draw = None
+        self.disp = None
         self.dirty = True
         
         self.root = tk.Tk()
@@ -17,6 +18,7 @@ class Interact:
         
         self.menu = tk.Menu(self.root)
         self.root.config(menu=self.menu)
+        self.root.bind("<Configure>", self.on_resize)
 
         self.filemenu = tk.Menu(self.menu, tearoff=0)
         self.filemenu.add_command(label="Open", command=self.load)
@@ -30,10 +32,10 @@ class Interact:
         self.menu.add_cascade(label="Help", menu=self.helpmenu)
         
         self.canvas = tk.Canvas(self.root, width=640, height=480)
-        self.canvas.bind("<Button-1>", self.mouseclick)
-        self.canvas.bind("<B1-Motion>", self.mousemove)
-        self.canvas.bind("<ButtonRelease-1>", self.mousedrop)
-        self.canvas.pack()
+        self.canvas.bind("<Button-1>", self.on_mouseclick)
+        self.canvas.bind("<B1-Motion>", self.on_mousemove)
+        self.canvas.bind("<ButtonRelease-1>", self.on_mousedrop)
+        self.canvas.pack(fill="both", expand=True)
         self.canvas.focus_set()
         
         self.redraw_timer = self.root.after(100, self.redraw)
@@ -62,26 +64,25 @@ class Interact:
     def redraw(self):
         if self.dirty:
             self.dirty = False
-            self.make_recursive_image([])
+            self.make_recursive_image([(40,5),(380,40),(400,270),(60,280)])
             
-            disp = cv2.cvtColor(self.draw, cv2.COLOR_BGR2RGB)
-            disp = Image.fromarray(disp)
-            disp = ImageTk.PhotoImage(image=disp)
-            self.canvas.create_image(320, 240, image=disp)
-            self.canvas.image = disp
+            center = np.zeros((self.height+1, self.width), dtype=(np.uint8,3))
+            h,w = self.draw.shape[:2]
+            narrow = w/h < self.width/self.height
+            xoff = (self.width-w)//2 if narrow else 0
+            yoff = (self.height-h)//2 if not narrow else 0
+            scl = self.width/w
+            center[yoff:yoff+int(1+scl*h), xoff:xoff+int(scl*w)] = cv2.resize(self.draw, (0,0), fx=scl, fy=scl)
+            
+            img_cv2 = cv2.cvtColor(center, cv2.COLOR_BGR2RGB)
+            img_pil = Image.fromarray(img_cv2)
+            img_tk = ImageTk.PhotoImage(image=img_pil)
+            self.disp = img_tk
         
-        self.redraw_timer = self.root.after_idle(self.redraw)     
-    
-    def mouseclick(self, event):
-        self.clicked = True
-    
-    def mousemove(self, event):
-        self.mx = 0
-        self.my = 0
-        self.dirty = True
-    
-    def mousedrop(self, event):
-        self.clicked = False
+        self.canvas.delete("ALL")
+        self.canvas.create_image(self.width//2, self.height//2, image=self.disp)
+        self.canvas.image = self.disp
+        self.redraw_timer = self.root.after(100, self.redraw)     
     
     def save(self):
         self.root.after_cancel(self.redraw_timer)
@@ -100,11 +101,24 @@ class Interact:
     
     def load_image(self):
         self.image = cv2.imread(self.imfile)
-        h,w = self.image[:2]
-        self.root.resizable(True, True)
-        self.canvas.config(width=w, height=h)
-        self.root.resizable(False, False)
+        h,w = self.image.shape[:2]
+        self.root.minsize(w, h)
         self.dirty = True
+    
+    def on_mouseclick(self, event):
+        self.clicked = True
+    
+    def on_mousemove(self, event):
+        self.mx = 0
+        self.my = 0
+        self.dirty = True
+    
+    def on_mousedrop(self, event):
+        self.clicked = False
+    
+    def on_resize(self, event):
+        self.width = event.width
+        self.height = event.height
 
 
 if __name__=="__main__":
