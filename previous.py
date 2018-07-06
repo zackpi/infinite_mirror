@@ -10,11 +10,10 @@ class Interact:
         self.imfile = None
         self.image = None
         self.draw = None
-        self.default_background()
         
         self.xoff, yoff = 0,0
         self.disp = None
-        self.dirty = True
+        self.dirty = False
         
         self.width = 1
         self.height = 1
@@ -45,6 +44,12 @@ class Interact:
         self.canvas.focus_set()
         
         self.window = [(50,40),(70,40),(70,60),(50,60)]
+        self.canvas.create_polygon(*self.window[0], *self.window[1],
+                                    *self.window[2], *self.window[3], 
+                                    fill="#1c4", outline="#3e7", activefill="#5fa",
+                                    tag="poly")
+        self.default_background()
+        self.canvas.create_image(0,0, anchor=tk.NW, image=self.disp, tag="img")
         
         self.redraw_timer = self.root.after(100, self.redraw)
         self.root.mainloop()
@@ -84,13 +89,9 @@ class Interact:
             img_tk = ImageTk.PhotoImage(image=img_pil)
             self.disp = img_tk
         
-        self.canvas.delete("all")
-        self.canvas.create_image(xoff, yoff, anchor=tk.NW, image=self.disp)
-        self.canvas.create_polygon(*self.window[0], *self.window[1],
-                                    *self.window[2], *self.window[3], 
-                                    fill="#1c4", outline="#3e7", activefill="#5fa")
+        self.canvas.delete("img")
         self.canvas.image = self.disp
-        self.canvas.addtag_all("all")
+        self.canvas.tag_raise("poly")
         
         self.canvas.bind("<Configure>", self.on_resize)
         self.redraw_timer = self.root.after(100,self.redraw)     
@@ -134,7 +135,17 @@ class Interact:
         self.clicked = False
     
     def on_resize(self, event):
-        self.canvas.scale("all",0,0,event.width/self.width,event.height/self.height)
+        print(self.canvas.find_withtag("img"))
+        r,c = self.draw.shape[:2]
+        h,w = self.height, self.width
+        wide = c/r > w/h
+        xscl = c*h/r if not wide else w
+        yscl = r*w/c if wide else h
+        xoff = (w-xscl)/2 if not wide else 0
+        yoff = (h-yscl)/2 if wide else 0
+        pw,ph =xscl,yscl
+        self.canvas.scale("img",0,0,xscl/pw,yscl/ph)
+        
         self.width = event.width
         self.height = event.height
         self.dirty = True
