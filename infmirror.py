@@ -77,21 +77,31 @@ class RecursiveImageGenerator(tk.Canvas):
         self.draw = None    # np img - modified image
         self.disp = None    # tk img - photoimage for tk
         
-        self.imwidth = width
-        self.imheight = height
-        self.realwidth = width
-        self.realheight = height
+        self.imwidth, self.imheight = width, height
+        self.realwidth, self.realheight = width, height
+        self.mousex, self.mousey = 0, 0
         self.dirty = True  # whether drawing needs to be updated
         self.ready = False  # whether the parent is done setting up
         
         # init display elements
+        self.poly = [(50,40),(70,40),(70,60),(50,60)]
         self.default_background()
         self.disp = self.to_tkimg(self.draw)
+        
+        self.topleft = self.create_oval(*self.poly[0], self.poly[0][0]-5, self.poly[0][1]-5,
+                                        fill="#6fe", activefill="#0d0", tags=("poly", "topleft"))
+        self.topright = self.create_oval(*self.poly[1], self.poly[1][0]+5, self.poly[1][1]-5,
+                                        fill="#6fe", activefill="#0d0", tags=("poly", "topright"))
+        self.botright = self.create_oval(*self.poly[2], self.poly[2][0]+5, self.poly[2][1]+5,
+                                        fill="#6fe", activefill="#0d0", tags=("poly", "botright"))
+        self.botleft = self.create_oval(*self.poly[3], self.poly[3][0]-5, self.poly[3][1]+5,
+                                        fill="#6fe", activefill="#0d0", tags=("poly", "botleft"))
+        self.corners = {self.topleft: 0, self.topright: 1, self.botright: 2, self.botleft: 3}
+        self.selected = None
+        
         self.create_image(0,0, anchor=tk.NW, image=self.disp, tag="img")
-        self.window = [(50,40),(70,40),(70,60),(50,60)]
-        self.create_polygon(*self.window[0], *self.window[1], *self.window[2], *self.window[3],
-                            fill="#1c4", outline="#3e7", activefill="#5fa",
-                            stipple="gray50", tag="poly")
+        self.redraw_window()
+        
         self.after(100, self.redraw)
     
     def to_tkimg(self, img):
@@ -104,11 +114,16 @@ class RecursiveImageGenerator(tk.Canvas):
     def default_background(self):
         defaulttext = "Use File>Open to select an image to modify"
         (width, height), thick = cv2.getTextSize(defaulttext, cv2.FONT_HERSHEY_SIMPLEX, .5, 1)
-        self.image = cv2.putText(np.full((480,640), (100,0,0), dtype=(np.uint8,3)),
+        self.image = cv2.putText(np.full((480,640), (0,0,0), dtype=(np.uint8,3)),
                                 defaulttext, (320-width//2,240-height//2), 
                                 cv2.FONT_HERSHEY_SIMPLEX, .5, (100,100,100))
         self.draw = self.image.copy()
-        
+    
+    def redraw_window(self):
+        self.delete("window")
+        self.create_polygon(*self.poly[0], *self.poly[1], *self.poly[2], *self.poly[3],
+                            fill="#1c4", outline="#3e7",
+                            outlinestipple="gray50", stipple="gray12", tag="window")
     
     def make_recursive_image(self, dst):
         self.draw = self.image.copy()
@@ -126,7 +141,7 @@ class RecursiveImageGenerator(tk.Canvas):
     def redraw(self):
         self.ready = True
         if self.dirty:
-            self.make_recursive_image(self.window)
+            self.make_recursive_image(self.poly)
         self.disp = self.to_tkimg(self.draw)
         self.itemconfig("img", image=self.disp)
         self.redraw_timer = self.after(100, self.redraw) 
@@ -138,20 +153,37 @@ class RecursiveImageGenerator(tk.Canvas):
         self.dirty = True
     
     def on_mouseclick(self, event):
-        self.clicked = True
+        x,y = event.x, event.y
+        touch = self.find_overlapping(x-3, y-3, x+3, y+3)
+        if self.topleft in touch:
+            self.selected = self.topleft
+        if self.topright in touch:
+            self.selected = self.topright
+        if self.botright in touch:
+            self.selected = self.botright
+        if self.botleft in touch:
+            self.selected = self.botleft
     
     def on_mousemove(self, event):
-        self.mx = 0
-        self.my = 0
+        dx,dy = event.x - self.mousex, event.y - self.mousey
+        self.mousex, self.mousey = event.x, event.y
+        if self.selected is not None:
+            x1,y1,x2,y2 = self.bbox(self.selected)
+            corner = self.corners[self.selected]
+            self.poly[corner] = ((x1+x2)//2, (y1+y2)//2)
+            self.move(self.selected, dx, dy)
+            self.redraw_window()
+            self.dirty = True
     
     def on_mousedrop(self, event):
-        self.clicked = False
+        self.selected = None
     
     def configure_shape(self, x, y, w, h):
         if not self.ready:
             return
         rw, rh = self.realwidth, self.realheight
         self.place(x=x,y=y,width=w,height=h)
+        self.scale("window", 0, 0, w/rw, h/rh)
         self.scale("poly", 0, 0, w/rw, h/rh)
         self.realwidth, self.realheight = w, h
 
