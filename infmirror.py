@@ -87,6 +87,8 @@ class RecursiveImageGenerator(tk.Canvas):
         self.poly = [(50,40),(70,40),(70,60),(50,60)]
         self.default_background()
         self.disp = self.to_tkimg(self.draw)
+        self.create_image(0,0, anchor=tk.NW, image=self.disp, tag="img")
+        self.redraw_window()
         
         self.topleft = self.create_oval(*self.poly[0], self.poly[0][0]-5, self.poly[0][1]-5,
                                         fill="#6fe", activefill="#0d0", tags=("poly", "topleft"))
@@ -98,9 +100,6 @@ class RecursiveImageGenerator(tk.Canvas):
                                         fill="#6fe", activefill="#0d0", tags=("poly", "botleft"))
         self.corners = {self.topleft: 0, self.topright: 1, self.botright: 2, self.botleft: 3}
         self.selected = None
-        
-        self.create_image(0,0, anchor=tk.NW, image=self.disp, tag="img")
-        self.redraw_window()
         
         self.after(100, self.redraw)
     
@@ -182,9 +181,11 @@ class RecursiveImageGenerator(tk.Canvas):
         if not self.ready:
             return
         rw, rh = self.realwidth, self.realheight
+        
         self.place(x=x,y=y,width=w,height=h)
         self.scale("window", 0, 0, w/rw, h/rh)
         self.scale("poly", 0, 0, w/rw, h/rh)
+        self.poly = [(int(x*w/rw), int(y*h/rh)) for (x,y) in self.poly]
         self.realwidth, self.realheight = w, h
 
 if __name__=="__main__":
