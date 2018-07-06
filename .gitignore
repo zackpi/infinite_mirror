@@ -1,5 +1,9 @@
+# Ignore
 bin/
 lib/
 share/
 pip-selfcheck.json
 *.jpg
+
+# Allow
+!examples/*/*.jpg
