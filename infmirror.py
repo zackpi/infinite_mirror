@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import tkinter as tk
+import time, sys
 from PIL import Image, ImageTk
 from tkinter import filedialog as fd
 
@@ -58,7 +59,63 @@ class Interact(tk.Tk):
         yoff = (h-self.cnvs_yscl)/2 if iswide else 0
         
         self.canvas.configure_shape(xoff, yoff, self.cnvs_xscl, self.cnvs_yscl)
+
+
+class Polygon:
+    def __init__(self, pts=None):
+        if pts is None:
+            pts = [[],[]]
+        self.xpts = pts[0]
+        self.ypts = pts[1]
+    
+    def add(self, x, y):
+        self.xpts.append(x)
+        self.ypts.append(y)
+    
+    def __setitem__(self, i, pt):
+        self.xpts[i] = pt[0]
+        self.ypts[i] = pt[1]
+    
+    def __getitem__(self, i):
+        return self.xpts[i], self.ypts[i]
+    
+    def __len__(self):
+        return len(self.xpts)
+    
+    def move(self, i, dx, dy):
+        self.xpts[i] += dx
+        self.ypts[i] += dy
+    
+    def scale(self, mx, my):
+        for i in range(len(xpts)):
+            self.xpts[i] *= mx
+            self.ypts[i] *= my
+    
+    def select(self, x, y, r):
+        min_i, min_d = 0, sys.maxsize
+        for i, (h,k) in enumerate(zip(xpts, ypts)):
+            if abs(h-x) > r or abs(k-y) > r:
+                continue
+            d = (h-x)**2 + (k-y)**2
+            if d <= r*r:
+                min_d = d
+                min_i = i
+        return i if d < sys.maxsize else None
+    
+    def _flatten(x, y):
+        return [j for i in zip(x, y) for j in i]
+    
+    def render(self, corner="sharp"):
+        if corner == "sharp":
+            return _flatten(self.xpts, self.ypts)
         
+        elif corner == "bezier":
+            return self.flattened_vertices()
+        
+        elif corner == "spline":
+            return self.flattened_vertices()
+        
+        raise ValueError("Invalid corner type: %s" % corner)
 
 
 class RecursiveImageGenerator(tk.Canvas):
@@ -70,6 +127,9 @@ class RecursiveImageGenerator(tk.Canvas):
         self.bind("<B1-Motion>", self.on_mousemove)
         self.bind("<Motion>", self.on_mousemove)
         self.bind("<ButtonRelease-1>", self.on_mousedrop)
+        self.bind("<Key>", self.on_keypress)
+        self.bind("<KeyRelease>", self.on_keyrelease)
+        self.focus_force()
         
         # init instance vars
         self.imfile = None  # str - image file path
@@ -79,26 +139,23 @@ class RecursiveImageGenerator(tk.Canvas):
         
         self.imwidth, self.imheight = width, height
         self.realwidth, self.realheight = width, height
-        self.mousex, self.mousey = 0, 0
         self.dirty = True  # whether drawing needs to be updated
         self.ready = False  # whether the parent is done setting up
         
+        self.mouseclick = False
+        self.mousex, self.mousey = 0, 0
+        self.shift, self.lshift, self.rshift = False, False, False
+        
         # init display elements
-        self.poly = [(50,40),(70,40),(70,60),(50,60)]
         self.default_background()
         self.disp = self.to_tkimg(self.draw)
         self.create_image(0,0, anchor=tk.NW, image=self.disp, tag="img")
-        self.redraw_window()
         
-        self.topleft = self.create_oval(*self.poly[0], self.poly[0][0]-5, self.poly[0][1]-5,
-                                        fill="#6fe", activefill="#0d0", tags=("poly", "topleft"))
-        self.topright = self.create_oval(*self.poly[1], self.poly[1][0]+5, self.poly[1][1]-5,
-                                        fill="#6fe", activefill="#0d0", tags=("poly", "topright"))
-        self.botright = self.create_oval(*self.poly[2], self.poly[2][0]+5, self.poly[2][1]+5,
-                                        fill="#6fe", activefill="#0d0", tags=("poly", "botright"))
-        self.botleft = self.create_oval(*self.poly[3], self.poly[3][0]-5, self.poly[3][1]+5,
-                                        fill="#6fe", activefill="#0d0", tags=("poly", "botleft"))
-        self.corners = {self.topleft: 0, self.topright: 1, self.botright: 2, self.botleft: 3}
+        self.poly = Polygon([(50,40),(70,40),(70,60),(50,60)])
+        self.mask_elements = []
+        self.new_mask = None
+        self.redraw_polys()
+        
         self.selected = None
         
         self.after(100, self.redraw)
@@ -117,12 +174,23 @@ class RecursiveImageGenerator(tk.Canvas):
                                 defaulttext, (320-width//2,240-height//2), 
                                 cv2.FONT_HERSHEY_SIMPLEX, .5, (100,100,100))
         self.draw = self.image.copy()
+        self.mask = np.full((self.imheight, self.imwidth), 255, dtype=(np.uint8, 3))
     
-    def redraw_window(self):
+    def redraw_polys(self):
         self.delete("window")
-        self.create_polygon(*self.poly[0], *self.poly[1], *self.poly[2], *self.poly[3],
-                            fill="#1c4", outline="#3e7",
-                            outlinestipple="gray50", stipple="gray12", tag="window")
+        self.delete("mask")
+        self.delete("new_mask")
+        
+        # redraw window
+        self.create_polygon(*self.poly.render("sharp"), tag="window")
+        
+        # redraw mask elements
+        for el in self.mask_elements:
+            self.create_polygon(*self.mask.render("sharp"), tag="mask")
+        
+        # redraw new mask
+        if self.new_mask is not None:
+            self.create_polygon(*self.mask.render("sharp"), tag="new_mask")
     
     def make_recursive_image(self, dst):
         self.draw = self.image.copy()
@@ -133,49 +201,82 @@ class RecursiveImageGenerator(tk.Canvas):
         hom, _ = cv2.findHomography(src, dst)
         
         for i in range(4):
-            warp = cv2.warpPerspective(self.draw, hom, (c,r), flags=cv2.INTER_LANCZOS4)
+            masked = cv2.bitwise_and(self.draw, self.mask)
+            warp = cv2.warpPerspective(masked, hom, (c,r), flags=cv2.INTER_LINEAR)
             cutout = cv2.fillConvexPoly(self.draw, dst, [0,0,0])
             self.draw = cv2.bitwise_or(cutout, warp)
     
     def redraw(self):
         self.ready = True
+        print(self.dirty)
         if self.dirty:
             self.make_recursive_image(self.poly)
+            self.dirty = False
         self.disp = self.to_tkimg(self.draw)
         self.itemconfig("img", image=self.disp)
-        self.redraw_timer = self.after(100, self.redraw) 
+        self.redraw_timer = self.after(33, self.redraw) 
     
     def load_image(self, imfile):
         self.imfile = imfile
         self.image = cv2.imread(self.imfile)
         self.imheight, self.imwidth = self.image.shape[:2]
+        self.mask = np.full((self.imheight, self.imwidth), 255, dtype=(np.uint8, 3))
         self.dirty = True
     
     def on_mouseclick(self, event):
         x,y = event.x, event.y
-        touch = self.find_overlapping(x-3, y-3, x+3, y+3)
-        if self.topleft in touch:
-            self.selected = self.topleft
-        if self.topright in touch:
-            self.selected = self.topright
-        if self.botright in touch:
-            self.selected = self.botright
-        if self.botleft in touch:
-            self.selected = self.botleft
+        if self.shift:
+            pass
+        else:
+            touch = self.find_overlapping(x-3, y-3, x+3, y+3)
+            if self.topleft in touch:
+                self.selected = self.topleft
+            if self.topright in touch:
+                self.selected = self.topright
+            if self.botright in touch:
+                self.selected = self.botright
+            if self.botleft in touch:
+                self.selected = self.botleft
+        self.mouseclick = True
     
     def on_mousemove(self, event):
         dx,dy = event.x - self.mousex, event.y - self.mousey
         self.mousex, self.mousey = event.x, event.y
-        if self.selected is not None:
-            x1,y1,x2,y2 = self.bbox(self.selected)
-            corner = self.corners[self.selected]
-            self.poly[corner] = ((x1+x2)//2, (y1+y2)//2)
-            self.move(self.selected, dx, dy)
-            self.redraw_window()
-            self.dirty = True
+        if self.mouseclick:
+            if self.shift:
+                self.dirty = True
+            else:
+                if self.selected is not None:
+                    x1,y1,x2,y2 = self.bbox(self.selected)
+                    corner = self.corners[self.selected]
+                    self.poly[corner] = ((x1+x2)//2, (y1+y2)//2)
+                    self.move(self.selected, dx, dy)
+                    self.redraw_polys()
+                    self.dirty = True
     
     def on_mousedrop(self, event):
         self.selected = None
+        self.mouseclick = False
+    
+    def on_keypress(self, event):
+        key = event.keysym
+        
+        if key == "Shift_L":
+            self.lshift = True
+        if key == "Shift_R":
+            self.rshift = True
+        
+        self.shift = self.lshift or self.rshift
+    
+    def on_keyrelease(self, event):
+        key = event.keysym
+        
+        if key == "Shift_L":
+            self.lshift = False
+        if key == "Shift_R":
+            self.rshift = False
+        
+        self.shift = self.lshift or self.rshift        
     
     def configure_shape(self, x, y, w, h):
         if not self.ready:
