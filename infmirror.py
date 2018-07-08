@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import tkinter as tk
 import time, sys
+from polygon import Polygon
 from PIL import Image, ImageTk
 from tkinter import filedialog as fd
 
