@@ -1,4 +1,8 @@
 class Polygon:
+    """
+    The Polygon class defines a construct for storing points in a polygon, as well as some helper functions for modifying its position and scaling
+    """
+    
     def __init__(self, pts=None):
         if pts is None:
             pts = [[],[]]
@@ -6,29 +10,54 @@ class Polygon:
         self.ypts = [p[1] for p in pts]
     
     def add(self, x, y):
+        """
+        adds the point (x,y) between this Polygon's (k-1)th and 0th elements
+        """
         self.xpts.append(x)
         self.ypts.append(y)
     
     def __setitem__(self, i, pt):
+        """
+        directly modifies a given point in this Polygon
+        """
+        assert -i <= len(self.xpts), "Invalid index: " + str(i)
+        assert i < len(self.xpts), "Invalid index: " + str(i) + " >= " + str(len(self.xpts))
         self.xpts[i] = pt[0]
         self.ypts[i] = pt[1]
     
     def __getitem__(self, i):
+        """
+        returns the i-th point in this Polygon
+        """
+        assert -i <= len(self.xpts), "Invalid index: " + str(i)
+        assert i < len(self.xpts), "Invalid index: " + str(i) + " >= " + str(len(self.xpts))
         return self.xpts[i], self.ypts[i]
     
     def __len__(self):
         return len(self.xpts)
     
     def move(self, i, dx, dy):
+        """
+        moves the i-th point in this Polygon by dx in the x direction and dy in the y direction
+        """
+        assert -i <= len(self.xpts), "Invalid index: " + str(i)
+        assert i < len(self.xpts), "Invalid index: " + str(i) + " >= " + str(len(self.xpts))
         self.xpts[i] += dx
         self.ypts[i] += dy
     
     def scale(self, mx, my):
+        """
+        scales this entire Polygon by a magnitude of mx in the x axis and my in the y axis
+        """
         for i in range(len(xpts)):
             self.xpts[i] *= mx
             self.ypts[i] *= my
     
     def select(self, x, y, r):
+        """
+        returns the index of the point in this Polygon closest to (x,y) and within r units
+        returns None if no such point exists
+        """
         min_i, min_d = 0, sys.maxsize
         for i, (h,k) in enumerate(zip(xpts, ypts)):
             if abs(h-x) > r or abs(k-y) > r:
@@ -40,7 +69,16 @@ class Polygon:
         return i if d < sys.maxsize else None
     
     NUM_INTERP_SEGS = 20
-    def render(self, corner="sharp", flat=False):        
+    def render(self, corner="sharp", flat=False):
+        """
+        returns an ordered list of the points in this Polygon using the given interp method
+        
+        available interpolation methods:
+            sharp:      returns the control points of this Polygon
+            bezier:     returns a bezier curve defined by this Polygon's control points
+            hermite:    returns a cubic hermite spline through the control points
+        """
+                
         if corner == "sharp":
             return [self.xpts, self.ypts] if not flat else Polygon.flatten(self.xpts, self.ypts)
         
@@ -66,6 +104,7 @@ class Polygon:
     
     @staticmethod
     def flatten(x, y):
+        """ returns the flattened zipped list version of x,y """
         return [j for i in zip(x, y) for j in i]
 
 
@@ -106,9 +145,10 @@ class Polygon:
                 h_01*p[k+1] + h_11*m_k1
         return hermval
 
-
 if __name__=="__main__":
     from matplotlib import pyplot as plt
+    
+    # testing implementation of bezier and hermite splines for use in infmirror.py
     
     p = Polygon([(1,1), (2,5), (7,2), (12,3), (15, 7), (20, 4)])
     

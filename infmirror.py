@@ -7,6 +7,9 @@ from PIL import Image, ImageTk
 from tkinter import filedialog as fd
 
 class Interact(tk.Tk):
+    """
+    The Interact class defines a window to contain a RecursiveImageGenerator
+    """   
     
     def __init__(self):
         super().__init__()
@@ -35,6 +38,10 @@ class Interact(tk.Tk):
         self.mainloop()
     
     def save(self):
+        """
+        save the current image to a file
+        ignores the mask and window elements when rendering canvas
+        """
         self.canvas.after_cancel(self.canvas.redraw_timer)
         self.update_idletasks()
         savefile = fd.asksaveasfilename()
@@ -42,6 +49,9 @@ class Interact(tk.Tk):
         self.canvas.after(100, self.canvas.redraw)
     
     def load(self):
+        """
+        load an image to edit from a file
+        """
         self.canvas.after_cancel(self.canvas.redraw_timer)
         self.update_idletasks()
         imfile = fd.askopenfilename()
@@ -49,6 +59,10 @@ class Interact(tk.Tk):
         self.canvas.after(100, self.canvas.redraw) 
     
     def on_resize(self, event):
+        """
+        handles resizing of the canvas and internal elements
+        when the Tk window changes
+        """
         r,c = self.canvas.imheight, self.canvas.imwidth
         h,w = self.winfo_height(), self.winfo_width()
         
@@ -63,6 +77,11 @@ class Interact(tk.Tk):
 
 
 class RecursiveImageGenerator(tk.Canvas):
+    """
+    The RecursiveImageGenerator class handles all the interaction with the user
+    and processing on top of the Interact window
+    """
+    
     def __init__(self, parent, bg="#000", width=640, height=480):
         
         # set up widget
@@ -105,6 +124,10 @@ class RecursiveImageGenerator(tk.Canvas):
         self.after(100, self.redraw)
     
     def to_tkimg(self, img):
+        """
+        cv2 images are incompatible with tk
+        this method allows conversion between the image types
+        """
         img_cv2 = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_scl = cv2.resize(img_cv2, (int(self.realwidth), int(self.realheight)))
         img_pil = Image.fromarray(img_scl)
@@ -112,6 +135,10 @@ class RecursiveImageGenerator(tk.Canvas):
         return img_tk
     
     def default_background(self):
+        """
+        create a background for startup or when
+        an invalid file is loaded
+        """
         defaulttext = "Use File>Open to select an image to modify"
         (width, height), thick = cv2.getTextSize(defaulttext, cv2.FONT_HERSHEY_SIMPLEX, .5, 1)
         self.image = cv2.putText(np.full((480,640), (0,0,0), dtype=(np.uint8,3)),
@@ -121,6 +148,10 @@ class RecursiveImageGenerator(tk.Canvas):
         self.mask = np.full((self.imheight, self.imwidth), 255, dtype=(np.uint8, 3))
     
     def redraw_polys(self):
+        """
+        handles rendering of the window and mask elements
+        as well as any fragments of a new mask
+        """
         self.delete("window")
         self.delete("mask")
         self.delete("new_mask")
@@ -137,6 +168,10 @@ class RecursiveImageGenerator(tk.Canvas):
             self.create_polygon(*self.mask.render("sharp"), tag="new_mask")
     
     def make_recursive_image(self, dst):
+        """
+        actually perform the recursive (applied iteratively)
+        operation that makes in image look like an infinite mirror
+        """
         self.draw = self.image.copy()
         
         r,c = self.imheight, self.imwidth
@@ -151,6 +186,9 @@ class RecursiveImageGenerator(tk.Canvas):
             self.draw = cv2.bitwise_or(cutout, warp)
     
     def redraw(self):
+        """
+        render the screen
+        """
         self.ready = True
         print(self.dirty)
         if self.dirty:
@@ -161,13 +199,28 @@ class RecursiveImageGenerator(tk.Canvas):
         self.redraw_timer = self.after(33, self.redraw) 
     
     def load_image(self, imfile):
+        """
+        load an image onto the canvas
+        """
         self.imfile = imfile
         self.image = cv2.imread(self.imfile)
+        if self.image is None:
+            default_background()
         self.imheight, self.imwidth = self.image.shape[:2]
         self.mask = np.full((self.imheight, self.imwidth), 255, dtype=(np.uint8, 3))
         self.dirty = True
     
     def on_mouseclick(self, event):
+        """
+        there are two stages of the application:
+        
+        1. positioning the window polygon
+        2. creating mask elements
+        
+        in stage 1, mouseclick causes the corners of the window to get selected
+        in stage 2, mouseclick either selects a point of a mask element if close enough
+                    or creates a new point added to the current mask element
+        """
         x,y = event.x, event.y
         if self.shift:
             pass
@@ -184,6 +237,10 @@ class RecursiveImageGenerator(tk.Canvas):
         self.mouseclick = True
     
     def on_mousemove(self, event):
+        """
+        in stage 1, mousemove moves the selected corner of the window
+        in stage 2, mousemove moves the selected point of a mask element
+        """
         dx,dy = event.x - self.mousex, event.y - self.mousey
         self.mousex, self.mousey = event.x, event.y
         if self.mouseclick:
@@ -199,6 +256,9 @@ class RecursiveImageGenerator(tk.Canvas):
                     self.dirty = True
     
     def on_mousedrop(self, event):
+        """
+        deselects whatever was previously selected, if anything
+        """
         self.selected = None
         self.mouseclick = False
     
@@ -223,6 +283,9 @@ class RecursiveImageGenerator(tk.Canvas):
         self.shift = self.lshift or self.rshift        
     
     def configure_shape(self, x, y, w, h):
+        """
+        resizes and repositions elements when the window resizes
+        """
         if not self.ready:
             return
         rw, rh = self.realwidth, self.realheight
@@ -233,6 +296,5 @@ class RecursiveImageGenerator(tk.Canvas):
         self.poly = [(int(x*w/rw), int(y*h/rh)) for (x,y) in self.poly]
         self.realwidth, self.realheight = w, h
 
-if __name__=="__main__":
-    Interact()
+Interact()
 
